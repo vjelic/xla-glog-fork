@@ -602,6 +602,7 @@ absl::Status RocmExecutor::Init() {
   TF_ASSIGN_OR_RETURN(rocm_context_,
                       RocmContext::Create(device_ordinal(), device_));
   TF_ASSIGN_OR_RETURN(version_, GetGpuISAVersion(device_));
+
   // We initialize BLAS interfaces early here since otherwise it might create 
   // us problems during hipBlasLt initialization under graph capture.
   // There is no real advantage of explicitly using 'lazy initialization' on 
@@ -831,9 +832,11 @@ void RocmExecutor::DeallocateStream(Stream* stream) {
 
 absl::Status RocmExecutor::InitBlas() {
   PluginRegistry* registry = PluginRegistry::Instance();
-  TF_ASSIGN_OR_RETURN(auto factory, 
+  {
+    TF_ASSIGN_OR_RETURN(auto factory, 
       registry->GetFactory<PluginRegistry::BlasFactory>(rocm::kROCmPlatformId));
-  blas_.reset(factory(this));
+    blas_.reset(factory(this));
+  }
   return absl::OkStatus();
 }
 
@@ -842,7 +845,7 @@ blas::BlasSupport* RocmExecutor::AsBlas() {
 }
 
 dnn::DnnSupport* RocmExecutor::AsDnn() {
-  absl::MutexLock lock(&mu_);
+    absl::MutexLock lock(&mu_);
   if (dnn_ != nullptr) {
     return dnn_.get();
   }
