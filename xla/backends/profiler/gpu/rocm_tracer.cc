@@ -46,11 +46,13 @@ limitations under the License.
 #include "tsl/platform/mem.h"
 
 
-using tsl::profiler::XEventBuilder;
-using tsl::profiler::XEventMetadata;
-using tsl::profiler::XLineBuilder;
-using tsl::profiler::XPlaneBuilder;
-using tsl::profiler::XSpace;
+using tsl::profiler::AnnotationStack;
+
+// using tsl::profiler::XEventBuilder;
+// using tsl::profiler::XEventMetadata;
+// using tsl::profiler::XLineBuilder;
+// using tsl::profiler::XPlaneBuilder;
+// using tsl::profiler::XSpace;
 
 namespace xla {
 namespace profiler {
@@ -485,6 +487,12 @@ void RocmTracer::KernelEvent(const rocprofiler_record_header_t *hdr,
 
   auto it = kernel_info_.find(kinfo.kernel_id);
   if (it != kernel_info_.end()) ev->name = it->second.name;
+
+  // Set up the map from correlation id to annotation string.
+  const std::string& annotation = AnnotationStack::Get();
+  if (!annotation.empty()) {
+    collector_->annotation_map()->Add(ev->correlation_id, annotation);
+  }
 }
 
 void RocmTracer::TracingCallback(rocprofiler_context_id_t context,
@@ -718,7 +726,7 @@ extern "C" rocprofiler_tool_configure_result_t* rocprofiler_configure(
   id->name = "XLA-with-rocprofiler-sdk";
   obj.client_id_ = id;
 
-  std::cerr << "Configure rocprofiler-sdk..." << std::endl << std::flush;
+  LOG(INFO) << "Configure rocprofiler-sdk...";
 
   const uint32_t major = version / 10000;
   const uint32_t minor = (version % 10000) / 100;

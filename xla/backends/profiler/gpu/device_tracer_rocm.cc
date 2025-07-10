@@ -117,18 +117,16 @@ return options;
 }
 
 absl::Status GpuTracer::DoStart() {
-  // AnnotationStack::Enable(true);
+  AnnotationStack::Enable(true);
   uint64_t start_gputime_ns = RocmTracer::GetTimestamp();
   uint64_t start_walltime_ns = tsl::EnvTime::NowNanos();
  
-  // RocmTracerOptions tracer_options = GetRocmTracerOptions();
   RocmTraceCollectorOptions trace_collector_options =
       GetRocmTraceCollectorOptions(rocm_tracer_->NumGpus());
   rocm_trace_collector_ = CreateRocmCollector(
     trace_collector_options, start_walltime_ns, start_gputime_ns);
   RocmTracerOptions tracer_options = GetRocmTracerOptions();
   rocm_tracer_->Enable(tracer_options, rocm_trace_collector_.get());
-  // rocm_tracer_->Enable(rocm_trace_collector_.get());
   
   return absl::OkStatus();
 }
