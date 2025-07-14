@@ -37,6 +37,7 @@ limitations under the License.
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/node_hash_map.h"
 #include "rocm/rocm_config.h"
+
 #include "xla/tsl/profiler/backends/cpu/annotation_stack.h"
 #include "xla/tsl/profiler/utils/time_utils.h"
 #include "tsl/platform/env.h"
@@ -45,18 +46,10 @@ limitations under the License.
 #include "tsl/platform/macros.h"
 #include "tsl/platform/mem.h"
 
-
-using tsl::profiler::AnnotationStack;
-
-// using tsl::profiler::XEventBuilder;
-// using tsl::profiler::XEventMetadata;
-// using tsl::profiler::XLineBuilder;
-// using tsl::profiler::XPlaneBuilder;
-// using tsl::profiler::XSpace;
-
 namespace xla {
 namespace profiler {
 
+using tsl::profiler::AnnotationStack;
 static constexpr int kMaxSymbolSize = 1024;
 
 std::string demangle(const char* name) {
@@ -351,14 +344,15 @@ void RocmTracer::HipApiEvent(const rocprofiler_record_header_t *hdr,
   ev->source = RocmTracerEventSource::ApiCallback;
   ev->domain = RocmTracerEventDomain::HIP_API;
   ev->name = "??";
-  ev->annotation = "??";
   ev->roctx_range = "??";
   ev->start_time_ns = rec.start_timestamp;
   ev->end_time_ns = rec.end_timestamp;
   ev->device_id = RocmTracerEvent::kInvalidDeviceId;
   ev->correlation_id = rec.correlation_id.internal;
+  ev->annotation = collector_->annotation_map()->LookUp(ev->correlation_id);
   ev->thread_id = rec.thread_id;
   ev->stream_id = RocmTracerEvent::kInvalidStreamId;
+
   ev->kernel_info = KernelDetails{
   };
 
@@ -374,6 +368,7 @@ void RocmTracer::HipApiEvent(const rocprofiler_record_header_t *hdr,
 
   if (isKernelApi(rec.operation)) {
   }
+
 }
 
 void RocmTracer::MemcpyEvent(const rocprofiler_record_header_t *hdr,
@@ -464,12 +459,12 @@ void RocmTracer::KernelEvent(const rocprofiler_record_header_t *hdr,
   ev->source = RocmTracerEventSource::Activity;
   ev->domain = RocmTracerEventDomain::HIP_OPS;
   ev->name = "??";
-  ev->annotation = "??";
   ev->roctx_range = "??";
   ev->start_time_ns = rec.start_timestamp;
   ev->end_time_ns = rec.end_timestamp;
   ev->device_id = agents_[kinfo.agent_id.handle].id.handle;
   ev->correlation_id = rec.correlation_id.internal;
+  ev->annotation = collector_->annotation_map()->LookUp(ev->correlation_id);
   ev->thread_id = rec.thread_id;
   ev->stream_id = kinfo.queue_id.handle;
   ev->kernel_info = KernelDetails{
@@ -487,12 +482,6 @@ void RocmTracer::KernelEvent(const rocprofiler_record_header_t *hdr,
 
   auto it = kernel_info_.find(kinfo.kernel_id);
   if (it != kernel_info_.end()) ev->name = it->second.name;
-
-  // Set up the map from correlation id to annotation string.
-  const std::string& annotation = AnnotationStack::Get();
-  if (!annotation.empty()) {
-    collector_->annotation_map()->Add(ev->correlation_id, annotation);
-  }
 }
 
 void RocmTracer::TracingCallback(rocprofiler_context_id_t context,
@@ -609,7 +598,7 @@ int RocmTracer::toolInit(rocprofiler_client_finalize_t fini_func, void* tool_dat
   // buffered tracing
   auto code_object_ops = std::vector<rocprofiler_tracing_operation_t>{
     ROCPROFILER_CODE_OBJECT_DEVICE_KERNEL_SYMBOL_REGISTER};
-
+  
   rocprofiler_configure_callback_tracing_service(
     utility_context_,
     ROCPROFILER_CALLBACK_TRACING_CODE_OBJECT,
@@ -624,11 +613,39 @@ int RocmTracer::toolInit(rocprofiler_client_finalize_t fini_func, void* tool_dat
   // buffer_size_bytes depends on the number of events to be traced (records)
   // buffer_watermark_bytes used to trigger callbacks, this might cause hang when profiling
   // might need a better way to set this up
-  constexpr auto buffer_size_bytes = 10 * 4096;
-  constexpr auto buffer_watermark_bytes = 4 * 4096;
+  constexpr auto buffer_size_bytes = 20 * 4096;
+  constexpr auto buffer_watermark_bytes = 6 * 4096;
 
   // Utility context to gather code‑object info
   rocprofiler_create_context(&context_);
+
+  {
+    // to retrieve annotation for HIP APIs
+    const rocprofiler_tracing_operation_t* hip_ops = nullptr;
+    size_t hip_ops_count = 0;
+
+    rocprofiler_configure_callback_tracing_service(
+      context_,
+      ROCPROFILER_CALLBACK_TRACING_HIP_RUNTIME_API,
+      hip_ops,
+      hip_ops_count,
+      [](rocprofiler_callback_tracing_record_t record,
+         rocprofiler_user_data_t*, void*) {
+        if (record.phase == ROCPROFILER_CALLBACK_PHASE_ENTER) {
+          const std::string& annotation = tsl::profiler::AnnotationStack::Get();
+          if (!annotation.empty()) {
+            // VLOG(0) << "[toolInit] HIP API ENTER: correlation_id = "
+            //         << record.correlation_id.internal
+            //         << ", annotation = " << annotation;
+            RocmTracer::i()
+              .collector()
+              ->annotation_map()
+              ->Add(record.correlation_id.internal, annotation);
+          }
+        }
+      },
+      nullptr);
+  }
 
   rocprofiler_create_buffer(context_,
     buffer_size_bytes,
@@ -659,8 +676,34 @@ int RocmTracer::toolInit(rocprofiler_client_finalize_t fini_func, void* tool_dat
     return -1;
   }
 
-  rocprofiler_start_context(context_);
-  rocprofiler_stop_context(context_);
+  {
+    // Optional: filter HIP ops (you can specify kernel/memcpy operations, or leave it empty)
+    const rocprofiler_tracing_operation_t* hip_ops = nullptr;
+    size_t hip_ops_count = 0;
+
+    rocprofiler_configure_callback_tracing_service(
+      context_,
+      ROCPROFILER_CALLBACK_TRACING_HIP_RUNTIME_API,
+      hip_ops,
+      hip_ops_count,
+      [](rocprofiler_callback_tracing_record_t record,
+         rocprofiler_user_data_t*, void*) {
+        if (record.phase == ROCPROFILER_CALLBACK_PHASE_ENTER) {
+          const std::string& annotation = tsl::profiler::AnnotationStack::Get();
+          if (!annotation.empty()) {
+            VLOG(0) << "[toolInit] HIP API ENTER: correlation_id = "
+                    << record.correlation_id.internal
+                    << ", annotation = " << annotation;
+            xla::profiler::RocmTracer::i()
+              .collector()
+              ->annotation_map()
+              ->Add(record.correlation_id.internal, annotation);
+          }
+        }
+      },
+      nullptr);
+  }
+
   return 0;
 }
 
