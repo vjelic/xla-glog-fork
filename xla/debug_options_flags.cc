@@ -122,11 +122,13 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
 #else
   opts.set_xla_gpu_enable_cublaslt(false);
 #endif
+// Command buffers are disabled by default !
+//   opts.add_xla_gpu_enable_command_buffer(DebugOptions::FUSION);
+//   opts.add_xla_gpu_enable_command_buffer(DebugOptions::CUBLAS);
+//   opts.add_xla_gpu_enable_command_buffer(DebugOptions::CUSTOM_CALL);
+//   opts.add_xla_gpu_enable_command_buffer(DebugOptions::CUDNN);
+  opts.set_xla_gpu_graph_level(0);
 
-  opts.add_xla_gpu_enable_command_buffer(DebugOptions::FUSION);
-  opts.add_xla_gpu_enable_command_buffer(DebugOptions::CUBLAS);
-  opts.add_xla_gpu_enable_command_buffer(DebugOptions::CUSTOM_CALL);
-  opts.add_xla_gpu_enable_command_buffer(DebugOptions::CUDNN);
   opts.set_xla_gpu_graph_min_graph_size(5);
   opts.set_xla_gpu_graph_enable_concurrent_region(false);
   opts.set_xla_cmd_buffer_trace_cache_size(16);
