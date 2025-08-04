@@ -127,7 +127,6 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
 //   opts.add_xla_gpu_enable_command_buffer(DebugOptions::CUBLAS);
 //   opts.add_xla_gpu_enable_command_buffer(DebugOptions::CUSTOM_CALL);
 //   opts.add_xla_gpu_enable_command_buffer(DebugOptions::CUDNN);
-  opts.set_xla_gpu_graph_level(0);
 
   opts.set_xla_gpu_graph_min_graph_size(5);
   opts.set_xla_gpu_graph_enable_concurrent_region(false);
@@ -1418,7 +1417,7 @@ void MakeDebugOptionsFlags(std::vector<tsl::Flag>* flag_list,
       debug_options->xla_gpu_collectives_use_persistent_cliques(),
       "Use persistent per-process XLA:GPU collectives cliques"));
   flag_list->push_back(tsl::Flag(
-      "xla_gpu_graph_level", setter_for_xla_gpu_graph_level, 1,
+      "xla_gpu_graph_level", setter_for_xla_gpu_graph_level, 0,
       "The legacy flag for setting GPU graph level. Use "
       "xla_gpu_enable_command_buffer in new use cases. 0 = off; 1 = capture "
       "fusions and memcpys; 2 = capture gemms; 3 = capture convolutions."));
