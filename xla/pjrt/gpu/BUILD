@@ -56,7 +56,6 @@ cc_library(
         ":gpu_metrics",
         ":gpu_topology",
         ":gpu_topology_proto_cc",
-        ":se_gpu_topology_description",
         "//xla:executable_run_options",
         "//xla:literal",
         "//xla:shape_tree",
