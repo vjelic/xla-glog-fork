@@ -401,7 +401,7 @@ InitializeGpuClique(GpuCollectives* collectives, se::StreamExecutor* device,
   RankId parent_rank =
       *parent_clique_key.rank(clique_key.devices()[rank.value()]);
 
-  VLOG(3) << "Initialize GPU clique " << clique_key.ToString() << " rank #"
+  VLOG(1) << "Initialize GPU clique " << clique_key.ToString() << " rank #"
           << rank << " by splitting rank #" << parent_rank.value()
           << " in parent clique " << parent_clique_key.ToString()
           << "; num_local_participants=" << num_local_participants;
@@ -476,7 +476,7 @@ InitializeGpuClique(GpuCollectives* collectives, se::StreamExecutor* device,
                           EnablePeerAccess(clique_key, ranks));
     }
 
-    VLOG(3) << absl::StreamFormat(
+    VLOG(1) << absl::StreamFormat(
         "Create GPU communicators for clique %s; parent=%s; color=%d; "
         "peer_access_enabled=%d; rank_mapping=[%s]",
         clique_key.ToString(), parent_clique_key.ToString(), color,
@@ -511,10 +511,10 @@ InitializeGpuClique(GpuCollectives* collectives, se::StreamExecutor* device,
     // We can have a race to create a clique for a given key, the winner
     // inserts it into a map and the looser destroys all communicators.
     if (!emplaced.second) {
-      VLOG(3) << "Clique already exists: "
+      VLOG(1) << "Clique already exists: "
               << emplaced.first->second.DebugString();
     } else {
-      VLOG(3) << "Created new clique: " << emplaced.first->second.DebugString();
+      VLOG(1) << "Created new clique: " << emplaced.first->second.DebugString();
     }
 
     return emplaced.first->second.Acquire();
@@ -545,7 +545,7 @@ absl::StatusOr<std::shared_ptr<LockableGpuClique::Lock>> AcquireGpuClique(
     const AcquiredCliquesMap& acquired_cliques, int64_t max_nchannels) {
   VLOG(1) << "##### " << __func__ << " Start";
   int64_t num_local_participants = clique_key.num_local_participants();
-  VLOG(2) << "Acquire GPU clique " << clique_key.ToString() << "; run"
+  VLOG(1) << "Acquire GPU clique " << clique_key.ToString() << "; run"
           << run_id.ToString() << "; rank " << rank
           << "; num_local_participants=" << num_local_participants
           << "; acquired_cliques=" << acquired_cliques.size()
