@@ -61,7 +61,6 @@ CommandBufferThunk::CommandBufferThunk(
     bool enable_command_buffers_during_profiling)
     : Thunk(Thunk::kCommandBuffer, std::move(thunk_info)),
       commands_(std::move(commands)),
-      //thunks_(std::move(thunks)), // do not initialize thunks which 
       enable_command_buffers_during_profiling_(
           enable_command_buffers_during_profiling),
       state_(std::make_shared<State>()) {
@@ -85,7 +84,7 @@ absl::Status CommandBufferThunk::ExecutorCommandBuffer::Initialize(
           se::StreamExecutor* executor,
           BufferAllocation::Index max_index) {
   
-  for (int64_t i = 0; i < NumCachedGraphs; i++) {
+  for (int64_t i = 0; i < kNumCachedGraphs; i++) {
     TF_ASSIGN_OR_RETURN(cached_graphs_[i],
         executor->CreateCommandBuffer(se::CommandBuffer::Mode::kPrimary));
     recorded_allocs_[i].resize(max_index + 1);
@@ -101,24 +100,24 @@ bool CommandBufferThunk::ExecutorCommandBuffer::UpdateBufferAllocations(
   int dev_id = params.stream->parent()->device_ordinal();
 
   // first search if any of recorded graphs is fine
-  auto start_id = (active_graph_ + NumCachedGraphs-1) % NumCachedGraphs;
-  for (auto id = start_id; id < start_id + NumCachedGraphs; id++) { 
+  auto start_id = (active_graph_ + kNumCachedGraphs-1) % kNumCachedGraphs;
+  for (auto id = start_id; id < start_id + kNumCachedGraphs; id++) { 
     bool should_update = false;
-    auto& recorded = recorded_allocs_[id % NumCachedGraphs];
+    auto& recorded = recorded_allocs_[id % kNumCachedGraphs];
     for (const auto idx : commands.allocs_indices()) {
       if (idx == CommandBufferCmd::SpecialAllocIndex) continue;
       auto alloc = allocs->GetDeviceAddress(idx);
       if (!recorded[idx].IsSameAs(alloc)) {
         should_update = true;
         if(dev_id == 0) {
-          VLOG(1) << this << " " << (id % NumCachedGraphs) << " Alloc " << idx << " has changed: "
+          VLOG(1) << this << " " << (id % kNumCachedGraphs) << " Alloc " << idx << " has changed: "
                   << recorded[idx].opaque() << " -> " << alloc.opaque();
         }
         break;
       }
     } // for
     if (!should_update) {
-      active_graph_ = id % NumCachedGraphs;
+      active_graph_ = id % kNumCachedGraphs;
       if(dev_id == 0) {
         VLOG(1) << this << " Setting active graph to: " << active_graph_;
       }
@@ -126,7 +125,7 @@ bool CommandBufferThunk::ExecutorCommandBuffer::UpdateBufferAllocations(
     }
   } // for
   // otherwise, we change the active graph to the LRU one ??
-  active_graph_ = (active_graph_ + NumCachedGraphs-1) % NumCachedGraphs;
+  active_graph_ = (active_graph_ + kNumCachedGraphs-1) % kNumCachedGraphs;
   if(dev_id == 0) {
     VLOG(1) << this << ": Recording to new active graph: " << active_graph_;
   }

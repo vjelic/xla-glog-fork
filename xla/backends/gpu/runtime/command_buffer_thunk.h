@@ -39,7 +39,7 @@ namespace xla::gpu {
 
 class CommandBufferThunk : public Thunk {
  public:
-  constexpr static int64_t NumCachedGraphs = 2;
+  constexpr static int64_t kNumCachedGraphs = 2;
   CommandBufferThunk(CommandBufferCmdExecutor commands, ThunkInfo thunk_info,
                      std::unique_ptr<SequentialThunk> thunks = nullptr,
                      bool enable_command_buffers_during_profiling = false);
@@ -96,7 +96,7 @@ class CommandBufferThunk : public Thunk {
     CommandBufferCmd::StateManager state ABSL_GUARDED_BY(mutex);
 
   private:
-    std::array<std::unique_ptr<se::CommandBuffer>, NumCachedGraphs> 
+    std::array<std::unique_ptr<se::CommandBuffer>, kNumCachedGraphs> 
                                     cached_graphs_ ABSL_GUARDED_BY(mutex);
 
     // Mapping from buffer allocation index to the device memory passed at
@@ -110,10 +110,10 @@ class CommandBufferThunk : public Thunk {
     // execution on a stream. All other pieces of information (like thread
     // and block sizes) captured by commands at construction time and do not
     // change.
-    std::array< AllocsVec, NumCachedGraphs> recorded_allocs_ ABSL_GUARDED_BY(mutex);
+    std::array< AllocsVec, kNumCachedGraphs> recorded_allocs_ ABSL_GUARDED_BY(mutex);
 
-    // Holds the index of currently active graph [0, NumCachedGraphs-1]
-    int64_t active_graph_ ABSL_GUARDED_BY(mutex) = NumCachedGraphs-1;
+    // Holds the index of currently active graph [0, kNumCachedGraphs-1]
+    int64_t active_graph_ ABSL_GUARDED_BY(mutex) = kNumCachedGraphs-1;
   };
 
   // Command buffer thunk owns commands buffers instantiated on all executors.

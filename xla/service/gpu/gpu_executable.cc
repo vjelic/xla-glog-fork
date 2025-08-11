@@ -811,10 +811,10 @@ absl::StatusOr<ExecutionOutput> GpuExecutable::ExecuteAsyncOnStreamImpl(
   }();
 
   auto& alloc_cached_flag = result.MutableResult()->alloc_cached_flag;
-  // if(device_ordinal == 0) {
-  //   VLOG(0) << module_name_ << " dev" <<  device_ordinal << 
-  //     " setting for result buf: " << result.MutableResult()->on_device_shape().ToString();
-  // }
+  if(VLOG_IS_ON(1) && device_ordinal == 0) {
+    VLOG(1) << module_name_ << " dev" <<  device_ordinal << 
+      " setting for result buf: " << result.MutableResult()->on_device_shape().ToString();
+  }
 
   for (auto& [index, result_buffer] : result.MutableResult()->buffers()) {
 
@@ -922,18 +922,19 @@ absl::StatusOr<ExecutionOutput> GpuExecutable::ExecuteAsyncOnStreamImpl(
         alloc_cached_flag.back() = true;
       } 
 
-      // if (device_ordinal == 0) {
-      //   auto str = alloc_cached_flag.back() ? " Found liveout alloc: " 
-      //                                       : " Live-out buffer not cached: ";
-      //   VLOG(0) << module_name_ << str <<
-      //         result_buffer.opaque() << " -- " << result_buffer.size();
-      // }
+      if(VLOG_IS_ON(1) && device_ordinal == 0) {
+        auto str = alloc_cached_flag.back() ? " Found liveout alloc: " 
+                                            : " Live-out buffer not cached: ";
+        VLOG(1) << module_name_ << str <<
+              result_buffer.opaque() << " -- " << result_buffer.size();
+      }
     }
     buffers_in_result.insert(result_buffer);
   }
-  // if (device_ordinal == 0) {
-  //   VLOG(0) << module_name_ << " created shaped buffer: " << result.MutableResult()->dump_cached_flag();
-  // }
+  if(VLOG_IS_ON(1) && device_ordinal == 0) {
+    VLOG(1) << module_name_ << " created shaped buffer: " 
+            << result.MutableResult()->dump_cached_flag();
+  }
 
   {
     TF_RETURN_IF_ERROR(

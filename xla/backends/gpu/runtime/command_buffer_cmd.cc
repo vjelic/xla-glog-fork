@@ -482,9 +482,6 @@ absl::Status CommandBufferCmdExecutor::RecordUpdate(
     DCHECK(record_state) << "Record state must be not null for "
                          << command->ToString();
 
-    // VLOG(0) << "dev" << execute_params.stream->parent()->device_ordinal()
-    //         << " updating command #" << id << " -- " << command->ToString();
-
     auto record_action = CommandBufferCmd::RecordUpdate{record_state->command};
     TF_ASSIGN_OR_RETURN(
         record_state->command,
@@ -573,29 +570,6 @@ CommandBufferCmdExecutor::allocs_indices() const {
 }
 
 //===----------------------------------------------------------------------===//
-// TracedCommandBuffer
-//===----------------------------------------------------------------------===//
-
-TracedCommandBuffer *CommandBufferCmd::
-                    GetTracedBuffer(const RecordParams& record_params,
-                                    se::CommandBuffer* command_buffer) {
-
-  return record_params.state.GetOrCreate<TracedCommandBuffer>(this, 
-  command_buffer, [&] {
-    return std::make_unique<TracedCommandBuffer>();
-  });
-}
-
-absl::StatusOr<se::CommandBuffer*> TracedCommandBuffer::GetOrTraceCommandBuffer(
-    const BufferAllocations* buffer_allocation, 
-    se::Stream* stream, TraceFunc trace_func) {
-
-  TF_ASSIGN_OR_RETURN(command_buffer_,
-          se::TraceCommandBufferFactory::Create(stream, trace_func));
-  return command_buffer_.get();
-}
-
-//===----------------------------------------------------------------------===//
 // TracedCommandBufferCmd
 //===----------------------------------------------------------------------===//
 
@@ -607,16 +581,7 @@ absl::StatusOr<const se::CommandBuffer::Command*>
 TracedCommandBufferCmd::RecordTracedCommand(
     const Thunk::ExecuteParams& execute_params,
     const RecordParams& record_params, RecordAction record_action,
-    se::CommandBuffer* command_buffer,
-    TraceFunc trace_func) {
-
-  // auto *traced_cmd = GetTracedBuffer(record_params, command_buffer);
-
-  // TF_ASSIGN_OR_RETURN(
-  //     auto nested_cmd,
-  //     traced_cmd->GetOrTraceCommandBuffer(
-  //         execute_params.buffer_allocations, // HACK execute_params.stream->parent(),
-  //         execute_params.command_buffer_trace_stream, trace_func));
+    se::CommandBuffer* command_buffer, TraceFunc trace_func) {
 
   TF_ASSIGN_OR_RETURN(auto nested_cmd,
           se::TraceCommandBufferFactory::Create(
@@ -1187,22 +1152,6 @@ absl::Status CublasLtCmd::Initialize(const Thunk::InitializeParams& params,
   return absl::OkStatus();
 }
 
-template < class NT >
-static void PrintBufferContents(
-    se::Stream* stream, se::DeviceMemoryBase buf) {
-  {
-    std::vector< NT > host_buffer(buf.size()/sizeof(NT));
-    CHECK_OK(stream->Memcpy(host_buffer.data(), buf, buf.size()));
-    CHECK_OK(stream->BlockHostUntilDone());
-
-    std::ostringstream oss;
-    for (auto e : host_buffer) {
-      oss << e << ", ";
-    }
-    VLOG(0) << "\nBUF = " << oss.str();
-  }
-}
-
 absl::StatusOr<const se::CommandBuffer::Command*> CublasLtCmd::Record(
     const Thunk::ExecuteParams& execute_params,
     const RecordParams& record_params, RecordAction record_action,
@@ -1229,39 +1178,7 @@ absl::StatusOr<const se::CommandBuffer::Command*> CublasLtCmd::Record(
   return RecordTracedCommand(
       execute_params, record_params, std::move(record_action), command_buffer,
       [&](se::Stream* stream) {
-#if 1
         return ExecuteOnStreamInternal(stream, execute_params);
-#else
-        const BufferAllocations& allocs = *execute_params.buffer_allocations;
-        auto a = allocs.GetDeviceAddress(a_),
-             b = allocs.GetDeviceAddress(b_),
-             d = allocs.GetDeviceAddress(d_),
-             w = allocs.GetDeviceAddress(workspace_.value());
-
-        size_t out_sz = d.size(), asz = a.size(), bsz = b.size(),
-               p1 = (out_sz/2) & ~3, p2 = out_sz - p1;
-        // VLOG(0) << "Recoding: a: " << asz << " b: " << bsz 
-        //         << " p1: " << p1 << " p2: " << p2;
-        
-        auto dbase = (uint8_t *)d.opaque();
-        { // fill p1 with asz blocks
-          auto ptr = dbase;
-          for (size_t ofs = 0; ofs < p1; ofs += asz, ptr += asz) {
-            size_t sz = std::min(asz, p1 - ofs);
-            se::DeviceMemoryBase dd(ptr, sz);
-            TF_RETURN_IF_ERROR(stream->Memcpy(&dd, a, sz));
-          }
-        }
-        { // fill p2 with bsz blocks
-          auto ptr = dbase + p1;
-          for (size_t ofs = 0; ofs < p2; ofs += bsz, ptr += bsz) {
-            size_t sz = std::min(bsz, p2 - ofs);
-            se::DeviceMemoryBase dd(ptr, sz);
-            TF_RETURN_IF_ERROR(stream->Memcpy(&dd, b, sz));
-          }
-        }
-        return absl::OkStatus();
-#endif
       });
 }
 
@@ -1378,23 +1295,6 @@ absl::StatusOr<const se::CommandBuffer::Command*> CuDnnCmd::Record(
     VLOG(5) << "  Arg: " << arg << ": " << buf.opaque();
     operands.push_back(buf);
   }
-  // TF_ASSIGN_OR_RETURN(
-  //     const bool supports_explicit,
-  //     graph_->get()->SupportsExplicitCommandBufferConstruction());
-  // if (supports_explicit) {
-  //   return Handle(
-  //       std::move(record_action),
-  //       [&](absl::Span<const se::CommandBuffer::Command* const> dependencies) {
-  //         return command_buffer->CreateDnnGraphCommand(
-  //             *graph_->get(), *execute_params.stream,
-  //             absl::Span<se::DeviceMemoryBase>(operands), dependencies);
-  //       },
-  //       [&](const se::CommandBuffer::Command* command) {
-  //         return command_buffer->UpdateDnnGraphCommand(
-  //             command, *graph_->get(), *execute_params.stream,
-  //             absl::Span<se::DeviceMemoryBase>(operands));
-  //       });
-  // }
   return RecordTracedCommand(
       execute_params, record_params, std::move(record_action), command_buffer,
       [&](se::Stream* stream) {
@@ -1605,9 +1505,6 @@ CollectiveCmd::CollectiveCmd(CommandBufferCmdType cmd_type,
       config_(std::move(config))
 {
   s_alloc.set_maybe_live_out(true);
-  // if(execution_stream_id != async_from_stream_id) {
-  //   LOG(WARNING) << "Ignoring async stream ID for collective: " << ToString();
-  // }
 }
 
 absl::Status CollectiveCmd::Prepare(
@@ -1627,11 +1524,6 @@ absl::Status CollectiveCmd::Prepare(
       auto num_local_participants,
       GetNumLocalParticipants(*params.collective_params,
                               config().replica_groups, config().group_mode));
-
-  // see nccl_collective_thunk.cc
-    // TF_ASSIGN_OR_RETURN(
-    //     size_t num_local_participants,
-    //     params.collective_cliques->num_communicators(clique_key));
 
   return resource_requests.AddClique(clique_key, num_local_participants);
 }

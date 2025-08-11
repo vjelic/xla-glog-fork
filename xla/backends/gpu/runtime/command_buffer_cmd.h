@@ -110,9 +110,6 @@ std::string CommandBufferCmdString(CommandBufferCmdType type);
 // CommandBufferCmd
 //===----------------------------------------------------------------------===//
 
-// Forward declaration of internal state type
-class TracedCommandBuffer; 
-
 // Command is a Thunk counterpart that instead of launching operations directly
 // on the underlying device records them into command buffers.
 //
@@ -294,9 +291,6 @@ class CommandBufferCmd {
 
   ExecutionStreamId execution_stream_id() const { return execution_stream_id_; }
 
-  TracedCommandBuffer *GetTracedBuffer(const RecordParams& record_params,
-        se::CommandBuffer* command_buffer);
-
  private:
   std::string profile_annotation_;
   CommandBufferCmdType cmd_type_;
@@ -455,35 +449,13 @@ class CommandBufferCmdExecutor {
 };
 
 //===----------------------------------------------------------------------===//
-// TracedCommandBuffer
-//===----------------------------------------------------------------------===//
-
-// A cache for traced command buffers that will re-trace on change in buffer
-// allocations that are relevant for `buffers` passed to constructor. We use a
-// very simple most-recently-used cache of traced command buffers as in practice
-// subsequent calls to XLA executable tend to reuse the same allocations.
-class TracedCommandBuffer : public CommandBufferCmd::State {
- public:
-  using TraceFunc = absl::FunctionRef<absl::Status(se::Stream*)>;
-
-  TracedCommandBuffer() {}
-
-  absl::StatusOr<se::CommandBuffer*> GetOrTraceCommandBuffer(
-    const BufferAllocations* buffer_allocation, 
-    se::Stream* stream, TraceFunc trace_func);
-
- private:
-  std::unique_ptr<se::CommandBuffer> command_buffer_;
-};
-
-//===----------------------------------------------------------------------===//
 // TracedCommandBufferCmd
 //===----------------------------------------------------------------------===//
 
 // A base class for commands implemented as tracing of stream activities.
 class TracedCommandBufferCmd : public CommandBufferCmd {
  protected:
-  using TraceFunc = TracedCommandBuffer::TraceFunc;
+  using TraceFunc = absl::FunctionRef<absl::Status(se::Stream*)>;
 
   explicit TracedCommandBufferCmd(CommandBufferCmdType cmd_type,
                                   ExecutionStreamId execution_stream_id);
@@ -938,9 +910,6 @@ class CollectiveCmd : public TracedCommandBufferCmd {
 
   ExecutionStreamId async_from_stream_id_;
   NcclCollectiveConfig config_;
-  // TODO this value shall be the same for all but better to add it to state object ??
-  //std::atomic< size_t > num_local_participants_;
-  // GpuCliqueKey clique_key_;
 };
 
 //===----------------------------------------------------------------------===//
